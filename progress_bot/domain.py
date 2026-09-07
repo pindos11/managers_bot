@@ -24,6 +24,7 @@ class EffectiveReport:
     location_units: int
     received_at: datetime
     report_count: int
+    display_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,11 @@ def parse_report(text: str | None) -> ParsedReport | None:
         location_units=int(match["location"]),
         is_correction=bool(match["correction"]),
     )
+
+
+def format_user_label(user_id: int, display_name: str | None = None) -> str:
+    """Return the manager-friendly user label, while retaining the Telegram ID."""
+    return f"{display_name} ({user_id})" if display_name else str(user_id)
 
 
 def business_day_at(moment: datetime, tz: ZoneInfo, reset_time: time) -> str:

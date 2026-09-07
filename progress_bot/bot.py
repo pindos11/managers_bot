@@ -9,7 +9,7 @@ from telegram.error import NetworkError, RetryAfter, TelegramError
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from .config import Settings
-from .domain import business_day_start, parse_report, utc_now
+from .domain import business_day_start, format_user_label, parse_report, utc_now
 from .presentation import format_summary
 from .service import ProgressService
 from .storage import Store
@@ -22,6 +22,9 @@ HELP = """Progress bot commands:
 /target <non-negative integer> — set today’s target
 /target — show today’s target
 /status — send a current summary"""
+
+
+HELP = HELP.replace("/adduser <telegram_id>", "/adduser <telegram_id> [name]")
 
 
 class TelegramProgressBot:
@@ -51,6 +54,21 @@ class TelegramProgressBot:
                     raise
                 await asyncio.sleep(2**attempt)
 
+    def log_rejected_report(self, message, user, chat, reason: str) -> None:
+        """Record rejected text without allowing an unusually long message to flood logs."""
+        text = message.text or ""
+        if len(text) > 500:
+            text = text[:500] + "… [truncated]"
+        LOGGER.info(
+            "rejected report reason=%s chat_id=%s topic_id=%s message_id=%s user_id=%s text=%r",
+            reason,
+            chat.id,
+            message.message_thread_id,
+            message.message_id,
+            user.id,
+            text,
+        )
+
     async def command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not self.is_owner_pm(update):
             return
@@ -61,15 +79,23 @@ class TelegramProgressBot:
             await update.effective_message.reply_text(HELP)
         elif name == "/users":
             users = self.store.users()
-            await update.effective_message.reply_text("Monitored users: " + (", ".join(map(str, users)) if users else "none"))
+            await update.effective_message.reply_text(
+                "Monitored users: "
+                + (", ".join(format_user_label(user_id, display_name) for user_id, display_name in users) if users else "none")
+            )
         elif name in {"/adduser", "/removeuser"}:
-            if len(context.args) != 1 or not context.args[0].isdigit() or int(context.args[0]) <= 0:
-                await update.effective_message.reply_text(f"Usage: {name} <positive telegram_id>")
+            has_valid_id = bool(context.args) and context.args[0].isdigit() and int(context.args[0]) > 0
+            has_valid_arguments = has_valid_id and (name == "/adduser" or len(context.args) == 1)
+            if not has_valid_arguments:
+                usage = "/adduser <positive telegram_id> [name]" if name == "/adduser" else "/removeuser <positive telegram_id>"
+                await update.effective_message.reply_text(f"Usage: {usage}")
                 return
             user_id = int(context.args[0])
-            changed = self.store.add_user(user_id, now) if name == "/adduser" else self.store.remove_user(user_id)
-            verb = "Added" if name == "/adduser" else "Removed"
-            await update.effective_message.reply_text(f"{verb} {user_id}." if changed else f"No change: {user_id} was already in that state.")
+            display_name = " ".join(context.args[1:]).strip() or None
+            changed = self.store.add_user(user_id, now, display_name) if name == "/adduser" else self.store.remove_user(user_id)
+            label = format_user_label(user_id, display_name)
+            verb = "Added or updated" if name == "/adduser" else "Removed"
+            await update.effective_message.reply_text(f"{verb} {label}." if changed else f"No change: {label} was already in that state.")
         elif name == "/target":
             day = self.service.business_day(now)
             if not context.args:
@@ -87,17 +113,24 @@ class TelegramProgressBot:
     async def report_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         message = update.effective_message
         user = update.effective_user
-        if not message or not user or not update.effective_chat:
+        chat = update.effective_chat
+        if not message or not user or not chat:
             return
-        if update.effective_chat.id != self.settings.group_chat_id or message.message_thread_id != self.settings.topic_id:
+        if chat.id != self.settings.group_chat_id:
+            self.log_rejected_report(message, user, chat, "wrong_chat")
+            return
+        if message.message_thread_id != self.settings.topic_id:
+            self.log_rejected_report(message, user, chat, "wrong_topic")
             return
         if not self.store.is_monitored(user.id):
+            self.log_rejected_report(message, user, chat, "unmonitored_user")
             return
         parsed = parse_report(message.text)
         if parsed is None:
+            self.log_rejected_report(message, user, chat, "invalid_report_format")
             return
         now = utc_now()
-        result, alerts = self.service.submit(user.id, update.effective_chat.id, message.message_id, parsed, now)
+        result, alerts = self.service.submit(user.id, chat.id, message.message_id, parsed, now)
         day = self.service.business_day(now)
         for index, alert in enumerate(alerts):
             fingerprint = f"report:{update.effective_chat.id}:{message.message_id}:{index}"
@@ -105,6 +138,8 @@ class TelegramProgressBot:
                 await self.send_owner(context.bot, "⚠ " + alert)
         if result.status == "accepted":
             LOGGER.info("accepted report message_id=%s user_id=%s", message.message_id, user.id)
+        else:
+            self.log_rejected_report(message, user, chat, result.status)
 
     def next_summary_time(self, now: datetime) -> datetime:
         day = self.service.business_day(now)

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from datetime import datetime, time, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -6,7 +7,8 @@ from zoneinfo import ZoneInfo
 
 from progress_bot.bot import TelegramProgressBot
 from progress_bot.config import Settings
-from progress_bot.domain import utc_now
+from progress_bot.domain import parse_report, utc_now
+from progress_bot.presentation import format_summary
 from progress_bot.storage import Store
 
 
@@ -53,6 +55,24 @@ def test_only_the_configured_topic_and_monitored_user_are_processed(tmp_path: Pa
     assert bot.service.summary(utc_now()).participants[0].user_id == 10
 
 
+def test_rejected_reports_are_logged_with_reason_and_text(tmp_path: Path, caplog) -> None:
+    bot = make_bot(tmp_path)
+    context = SimpleNamespace(bot=FakeBot(), args=[])
+    caplog.set_level(logging.INFO, logger="progress_bot.bot")
+
+    asyncio.run(bot.report_message(update(-100, 10, FakeMessage("not a report", 7, 5)), context))
+
+    assert "reason=unmonitored_user" in caplog.text
+    assert "text='not a report'" in caplog.text
+
+    bot.store.add_user(10, datetime(2026, 9, 5, 8, tzinfo=timezone.utc))
+    caplog.clear()
+    asyncio.run(bot.report_message(update(-100, 10, FakeMessage("not a report", 8, 5)), context))
+
+    assert "reason=invalid_report_format" in caplog.text
+    assert "text='not a report'" in caplog.text
+
+
 def test_commands_are_owner_private_message_only(tmp_path: Path) -> None:
     bot = make_bot(tmp_path)
     fake_bot = FakeBot()
@@ -63,6 +83,21 @@ def test_commands_are_owner_private_message_only(tmp_path: Path) -> None:
     asyncio.run(bot.command(update(1, 1, message, "private"), context))
     assert len(message.replies) == 1
     assert message.replies[0].endswith("set to 9.")
+
+
+def test_adduser_name_is_shown_in_users_and_summary(tmp_path: Path) -> None:
+    bot = make_bot(tmp_path)
+    context = SimpleNamespace(bot=FakeBot(), args=["10", "Alice", "Smith"])
+    message = FakeMessage("/adduser 10 Alice Smith", 1)
+    asyncio.run(bot.command(update(1, 1, message, "private"), context))
+    assert message.replies == ["Added or updated Alice Smith (10)."]
+    assert bot.store.users() == [(10, "Alice Smith")]
+
+    now = datetime(2026, 9, 5, 8, tzinfo=timezone.utc)
+    bot.service.submit(10, -100, 2, parse_report("1/2"), now)
+    summary = bot.service.summary(now)
+    assert summary.participants[0].display_name == "Alice Smith"
+    assert "Alice Smith (10)" in format_summary(summary)
 
 
 def test_summary_slot_is_anchored_to_daily_reset(tmp_path: Path) -> None:

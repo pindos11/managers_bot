@@ -163,10 +163,16 @@ Back up the SQLite database regularly with SQLite's online backup command or a f
 
 ## Owner commands
 
-- `/adduser <telegram_id>` / `/removeuser <telegram_id>`
+- `/adduser <telegram_id> [name]` / `/removeuser <telegram_id>` -- for example, `/adduser 123456789 Alice Smith`; summaries then show `Alice Smith (123456789)`.
 - `/users`
 - `/target <integer>` or `/target`
 - `/status`
 - `/help`
 
 Employee reports are `n/m`; `*n/m` corrects that user's latest accepted report in the current business day. Invalid text, edits, deleted messages, unmonitored users, and messages outside the configured topic are ignored.
+
+Rejected text reports are written to the service log with a reason, chat/topic/message/user IDs, and the message text (long text is truncated). On the server, view them with:
+
+```bash
+sudo journalctl -u telegram-progress-bot -f
+```

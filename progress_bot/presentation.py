@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .domain import Summary
+from .domain import Summary, format_user_label
 
 
 def format_summary(summary: Summary) -> str:
@@ -15,11 +15,21 @@ def format_summary(summary: Summary) -> str:
         lines.append(f"Location: {summary.location_units}/{summary.target} ({percent:.1f}%)")
         lines.append(f"Expected linear pace: {summary.pace_expected:.1f}; variance: {summary.pace_variance:+.1f}")
     if summary.conflicting_location_values:
-        conflicts = ", ".join(f"{user_id}={value}" for user_id, value in summary.conflicting_location_values.items())
+        names = {report.user_id: report.display_name for report in summary.participants}
+        conflicts = ", ".join(
+            f"{format_user_label(user_id, names.get(user_id))}={value}"
+            for user_id, value in summary.conflicting_location_values.items()
+        )
         lines.append(f"⚠ Conflicting current location totals: {conflicts}. Latest value is used.")
     if summary.participants:
         lines.append("Users:")
         for report in summary.participants:
             when = report.received_at.strftime("%H:%M UTC")
             lines.append(f"• {report.user_id}: personal {report.personal_units}, location {report.location_units}; {report.report_count} reports; last {when}")
+    if summary.participants:
+        first_user_line = len(lines) - len(summary.participants)
+        for index, report in enumerate(summary.participants):
+            lines[first_user_line + index] = lines[first_user_line + index].replace(
+                f" {report.user_id}:", f" {format_user_label(report.user_id, report.display_name)}:"
+            )
     return "\n".join(lines)

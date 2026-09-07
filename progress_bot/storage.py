@@ -43,7 +43,8 @@ class Store:
             db.executescript("""
             CREATE TABLE IF NOT EXISTS monitored_users (
                 user_id INTEGER PRIMARY KEY,
-                added_at TEXT NOT NULL
+                added_at TEXT NOT NULL,
+                display_name TEXT
             );
             CREATE TABLE IF NOT EXISTS targets (
                 business_day TEXT PRIMARY KEY,
@@ -79,10 +80,17 @@ class Store:
                 sent_at TEXT
             );
             """)
+            columns = {row[1] for row in db.execute("PRAGMA table_info(monitored_users)")}
+            if "display_name" not in columns:
+                db.execute("ALTER TABLE monitored_users ADD COLUMN display_name TEXT")
 
-    def add_user(self, user_id: int, now: datetime) -> bool:
+    def add_user(self, user_id: int, now: datetime, display_name: str | None = None) -> bool:
         with self.transaction() as db:
-            cursor = db.execute("INSERT OR IGNORE INTO monitored_users(user_id, added_at) VALUES (?, ?)", (user_id, now.isoformat()))
+            if display_name is None:
+                cursor = db.execute("INSERT OR IGNORE INTO monitored_users(user_id, added_at) VALUES (?, ?)", (user_id, now.isoformat()))
+            else:
+                cursor = db.execute("""INSERT INTO monitored_users(user_id, added_at, display_name) VALUES (?, ?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name""", (user_id, now.isoformat(), display_name))
             return cursor.rowcount == 1
 
     def remove_user(self, user_id: int) -> bool:
@@ -90,8 +98,10 @@ class Store:
             cursor = db.execute("DELETE FROM monitored_users WHERE user_id = ?", (user_id,))
             return cursor.rowcount == 1
 
-    def users(self) -> list[int]:
-        return [row[0] for row in self.connection.execute("SELECT user_id FROM monitored_users ORDER BY user_id")]
+    def users(self) -> list[tuple[int, str | None]]:
+        return [(int(row["user_id"]), row["display_name"]) for row in self.connection.execute(
+            "SELECT user_id, display_name FROM monitored_users ORDER BY user_id"
+        )]
 
     def is_monitored(self, user_id: int) -> bool:
         return self.connection.execute("SELECT 1 FROM monitored_users WHERE user_id = ?", (user_id,)).fetchone() is not None
@@ -111,7 +121,8 @@ class Store:
 
     @staticmethod
     def _effective(row: sqlite3.Row, count: int = 0) -> EffectiveReport:
-        return EffectiveReport(row["user_id"], row["personal_units"], row["location_units"], datetime.fromisoformat(row["received_at"]), count)
+        name = row["display_name"] if "display_name" in row.keys() else None
+        return EffectiveReport(row["user_id"], row["personal_units"], row["location_units"], datetime.fromisoformat(row["received_at"]), count, name)
 
     def record_report(self, business_day: str, user_id: int, chat_id: int, message_id: int, report: ParsedReport, now: datetime) -> RecordResult:
         with self.transaction() as db:
@@ -131,9 +142,10 @@ class Store:
     def effective_reports(self, business_day: str) -> list[EffectiveReport]:
         rows = self.connection.execute("""
             WITH ranked AS (
-              SELECT r.*, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY received_at DESC, id DESC) AS rank,
-                COUNT(*) OVER (PARTITION BY user_id) AS report_count
-              FROM reports r WHERE business_day=? AND superseded_by IS NULL
+              SELECT r.*, u.display_name, ROW_NUMBER() OVER (PARTITION BY r.user_id ORDER BY r.received_at DESC, r.id DESC) AS rank,
+                COUNT(*) OVER (PARTITION BY r.user_id) AS report_count
+              FROM reports r LEFT JOIN monitored_users u ON u.user_id = r.user_id
+              WHERE business_day=? AND superseded_by IS NULL
             ) SELECT * FROM ranked WHERE rank=1 ORDER BY user_id
         """, (business_day,)).fetchall()
         return [self._effective(row, row["report_count"]) for row in rows]
