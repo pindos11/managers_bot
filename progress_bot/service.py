@@ -31,23 +31,32 @@ class ProgressService:
                 alerts.append(self.translator.text(
                     "alert_personal_decreased", user=user, previous=result.previous.personal_units, current=report.personal_units
                 ))
-            if report.location_units < result.previous.location_units:
+            personal_change = report.personal_units - result.previous.personal_units
+            location_change = report.location_units - result.previous.location_units
+            if personal_change > 0 and location_change < personal_change:
                 alerts.append(self.translator.text(
-                    "alert_location_decreased", user=user, previous=result.previous.location_units, current=report.location_units
+                    "alert_location_growth_insufficient",
+                    user=user,
+                    personal_change=personal_change,
+                    location_change=location_change,
                 ))
-        summary = self.summary(now)
-        if summary.conflicting_location_values:
-            names = {item.user_id: item.display_name for item in summary.participants}
-            details = ", ".join(
-                f"{format_user_label(item_id, names.get(item_id))}={value}"
-                for item_id, value in summary.conflicting_location_values.items()
-            )
-            alerts.append(self.translator.text("alert_conflicting_totals", details=details, location=summary.location_units))
+        if result.previous_location_control is not None and report.location_units < result.previous_location_control:
+            alerts.append(self.translator.text(
+                "alert_location_decreased", user=user, previous=result.previous_location_control, current=report.location_units
+            ))
         return result, alerts
 
     def summary(self, now: datetime) -> Summary:
         day = self.business_day(now)
-        return make_summary(day, now, self.settings.timezone, self.settings.daily_reset_time, self.store.target(day), self.store.effective_reports(day))
+        return make_summary(
+            day,
+            now,
+            self.settings.timezone,
+            self.settings.daily_reset_time,
+            self.store.target(day),
+            self.store.effective_reports(day),
+            self.store.location_control(day),
+        )
 
     def set_target(self, units: int, now: datetime) -> str:
         self.store.set_target(self.business_day(now), units, now)

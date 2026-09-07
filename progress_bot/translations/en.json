@@ -25,6 +25,7 @@
   "summary_user": "• {label}: personal {personal}, location {location}; {count} reports; last {when}",
   "alert_orphan_correction": "Ignored orphan correction from {user}: no report exists for {day}.",
   "alert_personal_decreased": "Personal total decreased for {user}: {previous} → {current}.",
-  "alert_location_decreased": "Location total decreased in {user}'s report: {previous} → {current}.",
+  "alert_location_decreased": "Location control total decreased in {user}'s report: {previous} → {current}.",
+  "alert_location_growth_insufficient": "Location control total did not keep up with {user}'s work: personal +{personal_change}, location +{location_change}.",
   "alert_conflicting_totals": "Conflicting current location totals: {details}. Using latest report value {location}."
 }

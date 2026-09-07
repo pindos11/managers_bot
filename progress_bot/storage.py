@@ -15,6 +15,7 @@ class RecordResult:
     status: str  # accepted, duplicate, orphan_correction
     report_id: int | None = None
     previous: EffectiveReport | None = None
+    previous_location_control: int | None = None
 
 
 class Store:
@@ -132,12 +133,32 @@ class Store:
             previous_row = self._current_report(db, business_day, user_id)
             if report.is_correction and previous_row is None:
                 return RecordResult("orphan_correction")
+            # The location value is a day-wide control total.  Keep its
+            # high-water mark in the immutable report history, rather than
+            # process memory, so a restart cannot reset the rule.
+            location_control = db.execute(
+                "SELECT MAX(location_units) FROM reports WHERE business_day=?",
+                (business_day,),
+            ).fetchone()[0]
             cursor = db.execute("""INSERT INTO reports(business_day,user_id,chat_id,message_id,received_at,personal_units,location_units,is_correction)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", (business_day, user_id, chat_id, message_id, now.isoformat(), report.personal_units, report.location_units, int(report.is_correction)))
             report_id = int(cursor.lastrowid)
             if report.is_correction:
                 db.execute("UPDATE reports SET superseded_by=? WHERE id=?", (report_id, previous_row["id"]))
-            return RecordResult("accepted", report_id, self._effective(previous_row) if previous_row else None)
+            return RecordResult(
+                "accepted",
+                report_id,
+                self._effective(previous_row) if previous_row else None,
+                None if location_control is None else int(location_control),
+            )
+
+    def location_control(self, business_day: str) -> int | None:
+        """Return the durable highest location total reported for this day."""
+        row = self.connection.execute(
+            "SELECT MAX(location_units) FROM reports WHERE business_day=?",
+            (business_day,),
+        ).fetchone()
+        return None if row is None or row[0] is None else int(row[0])
 
     def effective_reports(self, business_day: str) -> list[EffectiveReport]:
         rows = self.connection.execute("""

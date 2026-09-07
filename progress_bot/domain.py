@@ -77,20 +77,21 @@ def make_summary(
     reset_time: time,
     target: int | None,
     reports: list[EffectiveReport],
+    location_control: int | None = None,
 ) -> Summary:
     reports = sorted(reports, key=lambda item: item.user_id)
-    values = {item.user_id: item.location_units for item in reports}
-    latest = max(reports, key=lambda item: item.received_at) if reports else None
-    distinct = set(values.values())
-    conflicts = values if len(distinct) > 1 else {}
-    location = latest.location_units if latest else None
+    # Different reports may legitimately repeat an older location total or
+    # advance it.  The control total is therefore its daily high-water mark.
+    location = location_control
+    if location is None and reports:
+        location = max(item.location_units for item in reports)
     expected = variance = None
     if target is not None and location is not None:
         start = business_day_start(business_day, tz, reset_time)
         elapsed = max(0.0, (generated_at.astimezone(tz) - start).total_seconds())
         expected = target * min(elapsed / timedelta(days=1).total_seconds(), 1.0)
         variance = location - expected
-    return Summary(business_day, generated_at, target, location, expected, variance, tuple(reports), conflicts)
+    return Summary(business_day, generated_at, target, location, expected, variance, tuple(reports), {})
 
 
 def utc_now() -> datetime:

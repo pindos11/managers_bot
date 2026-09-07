@@ -22,7 +22,7 @@ def test_report_correction_and_decrease_alerts(tmp_path: Path) -> None:
     second, alerts = service.submit(10, -100, 2, parse_report("*3/8"), now.replace(minute=5))
     assert second.status == "accepted"
     assert any("Personal total decreased" in alert for alert in alerts)
-    assert any("Location total decreased" in alert for alert in alerts)
+    assert any("Location control total decreased" in alert for alert in alerts)
     report = service.summary(now.replace(minute=10)).participants[0]
     assert (report.personal_units, report.location_units, report.report_count) == (3, 8, 1)
 
@@ -37,7 +37,7 @@ def test_orphan_correction_is_not_persisted(tmp_path: Path) -> None:
     assert "Ignored orphan" in alerts[0]
 
 
-def test_latest_report_and_conflicts_survive_database_restart(tmp_path: Path) -> None:
+def test_location_control_high_water_mark_survives_database_restart(tmp_path: Path) -> None:
     db = tmp_path / "bot.sqlite"
     now = datetime(2026, 9, 5, 8, tzinfo=timezone.utc)
     store = Store(db)
@@ -50,7 +50,33 @@ def test_latest_report_and_conflicts_survive_database_restart(tmp_path: Path) ->
     restored = ProgressService(settings(db), Store(db))
     summary = restored.summary(now.replace(minute=2))
     assert summary.location_units == 11
-    assert summary.conflicting_location_values == {10: 10, 11: 11}
+    assert summary.conflicting_location_values == {}
+
+
+def test_location_control_must_keep_up_with_personal_growth(tmp_path: Path) -> None:
+    db = tmp_path / "bot.sqlite"
+    store = Store(db)
+    service = ProgressService(settings(db), store)
+    now = datetime(2026, 9, 5, 8, tzinfo=timezone.utc)
+
+    service.submit(10, -100, 1, parse_report("10/20"), now)
+    _, insufficient_growth_alerts = service.submit(10, -100, 2, parse_report("12/20"), now.replace(minute=1))
+    _, matching_growth_alerts = service.submit(10, -100, 3, parse_report("13/21"), now.replace(minute=2))
+    _, other_user_decreased_alerts = service.submit(11, -100, 4, parse_report("1/19"), now.replace(minute=3))
+    _, increased_alerts = service.submit(11, -100, 5, parse_report("2/25"), now.replace(minute=4))
+    _, decreased_alerts = service.submit(10, -100, 6, parse_report("14/20"), now.replace(minute=5))
+
+    assert any("did not keep up" in alert for alert in insufficient_growth_alerts)
+    assert not matching_growth_alerts
+    assert any("Location control total decreased" in alert for alert in other_user_decreased_alerts)
+    assert not increased_alerts
+    assert any("Location control total decreased" in alert for alert in decreased_alerts)
+    assert service.summary(now.replace(minute=6)).location_units == 25
+
+    store.close()
+    restored = ProgressService(settings(db), Store(db))
+    _, restart_alerts = restored.submit(11, -100, 7, parse_report("3/24"), now.replace(minute=7))
+    assert any("Location control total decreased" in alert for alert in restart_alerts)
 
 
 def test_duplicate_telegram_message_is_idempotent(tmp_path: Path) -> None:

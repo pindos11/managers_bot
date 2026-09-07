@@ -24,13 +24,13 @@ def test_business_day_uses_configured_reset_time() -> None:
     assert business_day_at(datetime(2026, 9, 5, 3, 0, tzinfo=timezone.utc), KYIV, reset) == "2026-09-05"
 
 
-def test_summary_uses_latest_location_and_calculates_pace() -> None:
+def test_summary_uses_highest_location_and_calculates_pace() -> None:
     reports = [
         EffectiveReport(10, 2, 40, datetime(2026, 9, 5, 9, tzinfo=timezone.utc), 1),
         EffectiveReport(11, 3, 50, datetime(2026, 9, 5, 10, tzinfo=timezone.utc), 2),
     ]
     result = make_summary("2026-09-05", datetime(2026, 9, 5, 15, tzinfo=timezone.utc), KYIV, time(6), 120, reports)
     assert result.location_units == 50
-    assert result.conflicting_location_values == {10: 40, 11: 50}
+    assert result.conflicting_location_values == {}
     assert result.pace_expected == 60
     assert result.pace_variance == -10

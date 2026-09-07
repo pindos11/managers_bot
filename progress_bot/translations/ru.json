@@ -26,5 +26,6 @@
   "alert_orphan_correction": "Проигнорирована коррекция от {user}: нет отчета, который корректируется {day}.",
   "alert_personal_decreased": "Личное количество уменьшилось для {user}: {previous} → {current}.",
   "alert_location_decreased": "Количество по локации уменьшилось в отчете от {user}: {previous} → {current}.",
+  "alert_location_growth_insufficient": "Всего по локации не выросло так же как всего по пользователю {user}: личное +{personal_change}, локация +{location_change}.",
   "alert_conflicting_totals": "Конфликтующие записи о всего целевых действий: {details}. Наименьшее значение использовано: {location}."
 }

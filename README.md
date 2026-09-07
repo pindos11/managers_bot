@@ -169,7 +169,7 @@ Back up the SQLite database regularly with SQLite's online backup command or a f
 - `/status`
 - `/help`
 
-Employee reports are `n/m`; `*n/m` corrects that user's latest accepted report in the current business day. Invalid text, edits, deleted messages, unmonitored users, and messages outside the configured topic are ignored.
+Employee reports are `n/m`; `n` is that employee's cumulative work total and `m` is the location control total. During a business day neither value may decrease. When an employee's `n` rises, their `m` must rise by at least the same amount since that employee's previous report; otherwise the owner is alerted. This avoids treating the bot's received reports as a complete sum while still detecting inconsistent growth. The day-wide high-water mark for `m` is stored in SQLite, so a restart cannot allow a lower value. `*n/m` corrects that user's latest accepted report in the current business day. Invalid text, edits, deleted messages, unmonitored users, and messages outside the configured topic are ignored.
 
 Rejected text reports are written to the service log with a reason, chat/topic/message/user IDs, and the message text (long text is truncated). On the server, view them with:
 
