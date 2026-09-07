@@ -1,0 +1,14 @@
+# Keep TELEGRAM_BOT_TOKEN outside this file, e.g. in the systemd EnvironmentFile.
+[telegram]
+owner_user_id = 123456789
+group_chat_id = -1001234567890
+topic_id = 42 # Telegram message_thread_id
+
+[reporting]
+timezone = "Europe/Kyiv"
+daily_reset_time = "06:00"
+summary_interval_minutes = 60
+
+[storage]
+database_path = "data/progress-bot.sqlite3"
+
