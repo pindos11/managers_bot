@@ -19,7 +19,145 @@ The bot accepts reports only from configured monitored users in one Telegram for
    .venv/bin/python -m progress_bot --config config.toml
    ```
 
-For systemd, install `systemd/telegram-progress-bot.service`, place TOML configuration at `/etc/telegram-progress-bot.toml`, place `TELEGRAM_BOT_TOKEN=...` in `/etc/telegram-progress-bot.env` (mode `0600`), and run `systemctl enable --now telegram-progress-bot`.
+## Run it continuously on a Linux server (SSH and systemd)
+
+Use these instructions if the bot should keep running after you close SSH or restart the server. They assume an Ubuntu/Debian server and that you can log in with an account that can run `sudo`.
+
+Replace these placeholders everywhere below:
+
+- `YOUR_SSH_USER` -- the Linux login name, for example `ubuntu`.
+- `SERVER_IP` -- the server's IP address, for example `203.0.113.10`.
+- `YOUR_BOT_TOKEN` -- the token that BotFather gave you. Do not share it or commit it to Git.
+
+### 1. Copy the project to the server
+
+On **your own computer**, open PowerShell in this project folder (`managers_bot`) and enter this command. It copies the project files to a temporary folder on the server:
+
+```powershell
+scp -r .\* YOUR_SSH_USER@SERVER_IP:/tmp/telegram-progress-bot/
+```
+
+Enter the server password if SSH asks for it. If `/tmp/telegram-progress-bot/` does not exist, first connect with SSH (the next command) and run `mkdir -p /tmp/telegram-progress-bot`, then run the `scp` command again.
+
+### 2. Connect to the server
+
+On your own computer, enter:
+
+```powershell
+ssh YOUR_SSH_USER@SERVER_IP
+```
+
+Everything from this point through the verification steps is entered into the **remote SSH terminal**, not PowerShell on your computer. A prompt such as `ubuntu@server:~$` means you are connected.
+
+### 3. Install the bot and its Python requirements
+
+Copy and run these commands one at a time in the remote SSH terminal:
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-venv
+sudo useradd --system --home /opt/telegram-progress-bot --shell /usr/sbin/nologin progressbot
+sudo mkdir -p /opt/telegram-progress-bot
+sudo cp -a /tmp/telegram-progress-bot/. /opt/telegram-progress-bot/
+sudo python3 -m venv /opt/telegram-progress-bot/.venv
+sudo /opt/telegram-progress-bot/.venv/bin/pip install --upgrade pip
+sudo /opt/telegram-progress-bot/.venv/bin/pip install -r /opt/telegram-progress-bot/requirements.txt
+sudo chown -R progressbot:progressbot /opt/telegram-progress-bot
+```
+
+If the `useradd` command says that `progressbot` already exists, that is fine; continue with the next command.
+
+### 4. Create the secret token file
+
+In the remote SSH terminal, enter:
+
+```bash
+sudo nano /etc/telegram-progress-bot.env
+```
+
+Type this one line, replacing the placeholder with the real token:
+
+```text
+TELEGRAM_BOT_TOKEN=YOUR_BOT_TOKEN
+```
+
+Save it in nano: press `Ctrl+O`, press `Enter`, then press `Ctrl+X`. Then protect the file:
+
+```bash
+sudo chmod 600 /etc/telegram-progress-bot.env
+```
+
+### 5. Create the bot configuration
+
+Enter:
+
+```bash
+sudo nano /etc/telegram-progress-bot.toml
+```
+
+Paste the following and replace the example Telegram IDs with your actual values. `topic_id` is the numeric `message_thread_id`, not the topic's displayed name.
+
+```toml
+[telegram]
+owner_user_id = 123456789
+group_chat_id = -1001234567890
+topic_id = 42
+
+[reporting]
+timezone = "Europe/Kyiv"
+daily_reset_time = "06:00"
+summary_interval_minutes = 60
+
+[storage]
+database_path = "data/progress-bot.sqlite3"
+```
+
+Again, save with `Ctrl+O`, `Enter`, `Ctrl+X`.
+
+### 6. Register and start the service
+
+Enter these commands in the remote SSH terminal:
+
+```bash
+sudo cp /opt/telegram-progress-bot/systemd/telegram-progress-bot.service /etc/systemd/system/telegram-progress-bot.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now telegram-progress-bot
+```
+
+The last command both starts the bot now and configures it to start automatically after future server reboots.
+
+### 7. Confirm that it is running
+
+Enter:
+
+```bash
+sudo systemctl status telegram-progress-bot --no-pager
+```
+
+Look for `Active: active (running)`. You can also use this short check:
+
+```bash
+sudo systemctl is-active telegram-progress-bot
+```
+
+It must print exactly `active`. To see the bot's most recent messages or an error, enter:
+
+```bash
+sudo journalctl -u telegram-progress-bot -n 50 --no-pager
+```
+
+To watch logs live while you send the bot a Telegram message, enter `sudo journalctl -u telegram-progress-bot -f`; press `Ctrl+C` to stop watching. Finally, send `/status` to the bot from the configured owner's private Telegram chat. A response confirms that the running service can reach Telegram and that the configuration is usable.
+
+### Updating or restarting later
+
+After copying updated project files to `/tmp/telegram-progress-bot/`, repeat the copy, dependency-install, ownership, service-copy, and reload commands from steps 3 and 6, then enter:
+
+```bash
+sudo systemctl restart telegram-progress-bot
+sudo systemctl is-active telegram-progress-bot
+```
+
+If it does not print `active`, run `sudo journalctl -u telegram-progress-bot -n 50 --no-pager` and use the error shown there to diagnose the problem.
 
 Back up the SQLite database regularly with SQLite's online backup command or a filesystem snapshot. Do not copy only the `.sqlite3` file while the service is running without accounting for WAL files.
 
