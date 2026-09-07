@@ -18,6 +18,7 @@ class Settings:
     daily_reset_time: time
     summary_interval_minutes: int
     database_path: Path
+    language: str = "en"
 
 
 def load_settings(path: str | Path, environ: dict[str, str] | None = None) -> Settings:
@@ -46,7 +47,7 @@ def load_settings(path: str | Path, environ: dict[str, str] | None = None) -> Se
             daily_reset_time=reset,
             summary_interval_minutes=interval,
             database_path=Path(storage["database_path"]),
+            language=str(reporting.get("language", "en")).lower(),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError(f"Invalid configuration in {path}: {error}") from error
-

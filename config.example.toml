@@ -8,7 +8,7 @@ topic_id = 42 # Telegram message_thread_id
 timezone = "Europe/Kyiv"
 daily_reset_time = "06:00"
 summary_interval_minutes = 60
+language = "en" # Loads progress_bot/translations/en.json; copy it to another language code to translate.
 
 [storage]
 database_path = "data/progress-bot.sqlite3"
-

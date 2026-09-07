@@ -11,3 +11,5 @@ requires-python = ">=3.11"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+[tool.setuptools.package-data]
+progress_bot = ["translations/*.json"]

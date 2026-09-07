@@ -176,3 +176,21 @@ Rejected text reports are written to the service log with a reason, chat/topic/m
 ```bash
 sudo journalctl -u telegram-progress-bot -f
 ```
+
+## Translating bot messages
+
+All text sent by the bot is loaded from a JSON translation file. English is the default and is defined in `progress_bot/translations/en.json`. Do not change the JSON keys on the left; translate only the text on the right and keep placeholders such as `{name}`, `{count}`, and `{target}` unchanged.
+
+To add a language, copy `en.json` to a two-letter language filename, for example `uk.json`, translate its values, and set the language in the `[reporting]` section of `config.toml`:
+
+```toml
+language = "uk"
+```
+
+On the server, the file must be at `/opt/telegram-progress-bot/progress_bot/translations/uk.json`. Restart the service after changing the configuration or a translation file:
+
+```bash
+sudo systemctl restart telegram-progress-bot
+```
+
+If the selected translation file, key, or value is missing, the bot uses the English text instead.
