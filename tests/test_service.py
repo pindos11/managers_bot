@@ -90,6 +90,31 @@ def test_duplicate_telegram_message_is_idempotent(tmp_path: Path) -> None:
     assert service.summary(now).participants[0].report_count == 1
 
 
+def test_old_reports_preserve_payment_values_and_corrections_are_one_way(tmp_path: Path) -> None:
+    store = Store(tmp_path / "bot.sqlite")
+    service = ProgressService(settings(tmp_path / "bot.sqlite"), store)
+    now = datetime(2026, 9, 5, 8, tzinfo=timezone.utc)
+
+    assert service.submit(10, -100, 1, parse_report("1/10"), now)[0].status == "accepted"
+    assert service.submit(10, -100, 2, parse_report("2/11/20/30"), now.replace(minute=1))[0].status == "accepted"
+    assert service.submit(10, -100, 3, parse_report("3/12"), now.replace(minute=2))[0].status == "accepted"
+    report = service.summary(now.replace(minute=2)).participants[0]
+    assert (report.personal_units, report.location_units, report.card_units, report.cash_units) == (3, 12, 20, 30)
+
+    # An old correction cannot erase payment values from the current report.
+    rejected, _ = service.submit(10, -100, 4, parse_report("*2/11"), now.replace(minute=3))
+    assert rejected.status == "incompatible_correction"
+    assert service.summary(now.replace(minute=3)).participants[0].personal_units == 3
+
+    other = Store(tmp_path / "other.sqlite")
+    other_service = ProgressService(settings(tmp_path / "other.sqlite"), other)
+    assert other_service.submit(10, -100, 1, parse_report("1/10"), now)[0].status == "accepted"
+    accepted, _ = other_service.submit(10, -100, 2, parse_report("*2/11/20/30"), now.replace(minute=1))
+    assert accepted.status == "accepted"
+    amended = other_service.summary(now.replace(minute=1)).participants[0]
+    assert (amended.personal_units, amended.card_units, amended.cash_units, amended.report_count) == (2, 20, 30, 1)
+
+
 def test_target_and_summary_slot_persist(tmp_path: Path) -> None:
     store = Store(tmp_path / "bot.sqlite")
     now = datetime(2026, 9, 5, 8, tzinfo=timezone.utc)

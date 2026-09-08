@@ -30,6 +30,12 @@ def format_summary(summary: Summary, translator: Translator | None = None) -> st
     if summary.participants:
         lines.append(translator.text("summary_users"))
         for report in summary.participants:
+            payment_values = []
+            if report.card_units is not None:
+                payment_values.append(translator.text("summary_card", card=report.card_units))
+            if report.cash_units is not None:
+                payment_values.append(translator.text("summary_cash", cash=report.cash_units))
+            payments = f", {', '.join(payment_values)}" if payment_values else ""
             lines.append(translator.text(
                 "summary_user",
                 label=format_user_label(report.user_id, report.display_name),
@@ -37,5 +43,5 @@ def format_summary(summary: Summary, translator: Translator | None = None) -> st
                 location=report.location_units,
                 count=report.report_count,
                 when=report.received_at.strftime("%H:%M UTC"),
-            ))
+            ) + payments)
     return "\n".join(lines)

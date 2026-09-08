@@ -7,7 +7,10 @@ from zoneinfo import ZoneInfo
 
 
 # Whitespace may surround a report but is not part of its wire format.
-REPORT_PATTERN = re.compile(r"^\s*(?P<correction>\*)?(?P<personal>\d+)/(?P<location>\d+)\s*$")
+REPORT_PATTERN = re.compile(
+    r"^\s*(?P<correction>\*)?(?P<personal>\d+)/(?P<location>\d+)"
+    r"(?:/(?P<card>\d+)/(?P<cash>\d+))?\s*$"
+)
 
 
 @dataclass(frozen=True)
@@ -15,6 +18,8 @@ class ParsedReport:
     personal_units: int
     location_units: int
     is_correction: bool
+    card_units: int | None = None
+    cash_units: int | None = None
 
 
 @dataclass(frozen=True)
@@ -25,6 +30,8 @@ class EffectiveReport:
     received_at: datetime
     report_count: int
     display_name: str | None = None
+    card_units: int | None = None
+    cash_units: int | None = None
 
 
 @dataclass(frozen=True)
@@ -49,6 +56,8 @@ def parse_report(text: str | None) -> ParsedReport | None:
         personal_units=int(match["personal"]),
         location_units=int(match["location"]),
         is_correction=bool(match["correction"]),
+        card_units=None if match["card"] is None else int(match["card"]),
+        cash_units=None if match["cash"] is None else int(match["cash"]),
     )
 
 

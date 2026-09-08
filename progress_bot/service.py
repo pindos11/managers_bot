@@ -31,6 +31,14 @@ class ProgressService:
                 alerts.append(self.translator.text(
                     "alert_personal_decreased", user=user, previous=result.previous.personal_units, current=report.personal_units
                 ))
+            for kind, current, previous in (
+                ("card", report.card_units, result.previous.card_units),
+                ("cash", report.cash_units, result.previous.cash_units),
+            ):
+                if current is not None and previous is not None and current < previous:
+                    alerts.append(self.translator.text(
+                        f"alert_{kind}_decreased", user=user, previous=previous, current=current
+                    ))
             personal_change = report.personal_units - result.previous.personal_units
             location_change = report.location_units - result.previous.location_units
             if personal_change > 0 and location_change < personal_change:

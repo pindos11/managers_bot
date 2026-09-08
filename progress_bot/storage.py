@@ -12,7 +12,7 @@ from .domain import EffectiveReport, ParsedReport
 
 @dataclass(frozen=True)
 class RecordResult:
-    status: str  # accepted, duplicate, orphan_correction
+    status: str  # accepted, duplicate, orphan_correction, incompatible_correction
     report_id: int | None = None
     previous: EffectiveReport | None = None
     previous_location_control: int | None = None
@@ -61,6 +61,8 @@ class Store:
                 received_at TEXT NOT NULL,
                 personal_units INTEGER NOT NULL CHECK(personal_units >= 0),
                 location_units INTEGER NOT NULL CHECK(location_units >= 0),
+                card_units INTEGER CHECK(card_units >= 0),
+                cash_units INTEGER CHECK(cash_units >= 0),
                 is_correction INTEGER NOT NULL,
                 superseded_by INTEGER REFERENCES reports(id),
                 UNIQUE(chat_id, message_id)
@@ -84,6 +86,11 @@ class Store:
             columns = {row[1] for row in db.execute("PRAGMA table_info(monitored_users)")}
             if "display_name" not in columns:
                 db.execute("ALTER TABLE monitored_users ADD COLUMN display_name TEXT")
+            report_columns = {row[1] for row in db.execute("PRAGMA table_info(reports)")}
+            if "card_units" not in report_columns:
+                db.execute("ALTER TABLE reports ADD COLUMN card_units INTEGER CHECK(card_units >= 0)")
+            if "cash_units" not in report_columns:
+                db.execute("ALTER TABLE reports ADD COLUMN cash_units INTEGER CHECK(cash_units >= 0)")
 
     def add_user(self, user_id: int, now: datetime, display_name: str | None = None) -> bool:
         with self.transaction() as db:
@@ -123,7 +130,11 @@ class Store:
     @staticmethod
     def _effective(row: sqlite3.Row, count: int = 0) -> EffectiveReport:
         name = row["display_name"] if "display_name" in row.keys() else None
-        return EffectiveReport(row["user_id"], row["personal_units"], row["location_units"], datetime.fromisoformat(row["received_at"]), count, name)
+        return EffectiveReport(
+            row["user_id"], row["personal_units"], row["location_units"],
+            datetime.fromisoformat(row["received_at"]), count, name,
+            row["card_units"], row["cash_units"],
+        )
 
     def record_report(self, business_day: str, user_id: int, chat_id: int, message_id: int, report: ParsedReport, now: datetime) -> RecordResult:
         with self.transaction() as db:
@@ -133,6 +144,17 @@ class Store:
             previous_row = self._current_report(db, business_day, user_id)
             if report.is_correction and previous_row is None:
                 return RecordResult("orphan_correction")
+            if report.is_correction and report.card_units is None:
+                # Old reports inherit payment totals from earlier new reports.
+                # Therefore an old-format correction is unsafe whenever this
+                # user's current effective report has payment values.
+                previous_payment_values = db.execute(
+                    """SELECT 1 FROM reports WHERE business_day=? AND user_id=?
+                       AND superseded_by IS NULL AND card_units IS NOT NULL LIMIT 1""",
+                    (business_day, user_id),
+                ).fetchone()
+                if previous_payment_values is not None:
+                    return RecordResult("incompatible_correction")
             # The location value is a day-wide control total.  Keep its
             # high-water mark in the immutable report history, rather than
             # process memory, so a restart cannot reset the rule.
@@ -140,8 +162,13 @@ class Store:
                 "SELECT MAX(location_units) FROM reports WHERE business_day=?",
                 (business_day,),
             ).fetchone()[0]
-            cursor = db.execute("""INSERT INTO reports(business_day,user_id,chat_id,message_id,received_at,personal_units,location_units,is_correction)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", (business_day, user_id, chat_id, message_id, now.isoformat(), report.personal_units, report.location_units, int(report.is_correction)))
+            cursor = db.execute("""INSERT INTO reports(
+                business_day,user_id,chat_id,message_id,received_at,personal_units,location_units,card_units,cash_units,is_correction
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", (
+                business_day, user_id, chat_id, message_id, now.isoformat(),
+                report.personal_units, report.location_units, report.card_units,
+                report.cash_units, int(report.is_correction),
+            ))
             report_id = int(cursor.lastrowid)
             if report.is_correction:
                 db.execute("UPDATE reports SET superseded_by=? WHERE id=?", (report_id, previous_row["id"]))
@@ -167,9 +194,30 @@ class Store:
                 COUNT(*) OVER (PARTITION BY r.user_id) AS report_count
               FROM reports r LEFT JOIN monitored_users u ON u.user_id = r.user_id
               WHERE business_day=? AND superseded_by IS NULL
-            ) SELECT * FROM ranked WHERE rank=1 ORDER BY user_id
+            ) SELECT current.*,
+                COALESCE(
+                  current.card_units,
+                  (SELECT older.card_units FROM reports older
+                   WHERE older.business_day=current.business_day AND older.user_id=current.user_id
+                     AND older.superseded_by IS NULL AND older.card_units IS NOT NULL
+                   ORDER BY older.received_at DESC, older.id DESC LIMIT 1)
+                ) AS effective_card_units,
+                COALESCE(
+                  current.cash_units,
+                  (SELECT older.cash_units FROM reports older
+                   WHERE older.business_day=current.business_day AND older.user_id=current.user_id
+                     AND older.superseded_by IS NULL AND older.cash_units IS NOT NULL
+                   ORDER BY older.received_at DESC, older.id DESC LIMIT 1)
+                ) AS effective_cash_units
+              FROM ranked current WHERE rank=1 ORDER BY user_id
         """, (business_day,)).fetchall()
-        return [self._effective(row, row["report_count"]) for row in rows]
+        reports = []
+        for row in rows:
+            effective = dict(row)
+            effective["card_units"] = effective.pop("effective_card_units")
+            effective["cash_units"] = effective.pop("effective_cash_units")
+            reports.append(self._effective(effective, row["report_count"]))
+        return reports
 
     def create_alert(self, fingerprint: str, business_day: str, message: str, now: datetime) -> bool:
         with self.transaction() as db:

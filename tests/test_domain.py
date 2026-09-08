@@ -13,8 +13,14 @@ def test_parse_report_accepts_surrounding_whitespace_and_correction() -> None:
     assert parsed and parsed.is_correction and parsed.personal_units == 12 and parsed.location_units == 34
 
 
+def test_parse_report_accepts_optional_card_and_cash_values() -> None:
+    parsed = parse_report(" *12/34/56/78 ")
+    assert parsed and parsed.is_correction
+    assert (parsed.personal_units, parsed.location_units, parsed.card_units, parsed.cash_units) == (12, 34, 56, 78)
+
+
 def test_parse_report_rejects_non_reports() -> None:
-    for value in ("", "-1/2", "1/2 hello", "1", "*/2", "1.0/2", "1 /2", "1/ 2", "* 1/2", None):
+    for value in ("", "-1/2", "1/2 hello", "1", "*/2", "1.0/2", "1 /2", "1/ 2", "* 1/2", "1/2/3", "1/2/3/4/5", None):
         assert parse_report(value) is None
 
 
