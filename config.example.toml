@@ -9,6 +9,7 @@ timezone = "Europe/Kyiv"
 daily_reset_time = "06:00"
 summary_interval_minutes = 60
 language = "en" # Loads progress_bot/translations/en.json; copy it to another language code to translate.
+accept_all_topic_users = false # When true, accept reports from everyone in the configured chat topic.
 
 [storage]
 database_path = "data/progress-bot.sqlite3"

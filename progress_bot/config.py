@@ -19,6 +19,7 @@ class Settings:
     summary_interval_minutes: int
     database_path: Path
     language: str = "en"
+    accept_all_topic_users: bool = False
 
 
 def load_settings(path: str | Path, environ: dict[str, str] | None = None) -> Settings:
@@ -38,6 +39,9 @@ def load_settings(path: str | Path, environ: dict[str, str] | None = None) -> Se
         interval = int(reporting.get("summary_interval_minutes", 60))
         if interval <= 0 or interval > 1440:
             raise ValueError("summary_interval_minutes must be between 1 and 1440")
+        accept_all_topic_users = reporting.get("accept_all_topic_users", False)
+        if not isinstance(accept_all_topic_users, bool):
+            raise ValueError("accept_all_topic_users must be true or false")
         return Settings(
             token=token,
             owner_user_id=int(telegram["owner_user_id"]),
@@ -48,6 +52,7 @@ def load_settings(path: str | Path, environ: dict[str, str] | None = None) -> Se
             summary_interval_minutes=interval,
             database_path=Path(storage["database_path"]),
             language=str(reporting.get("language", "en")).lower(),
+            accept_all_topic_users=accept_all_topic_users,
         )
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError(f"Invalid configuration in {path}: {error}") from error

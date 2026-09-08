@@ -118,7 +118,7 @@ class TelegramProgressBot:
         if message.message_thread_id != self.settings.topic_id:
             self.log_rejected_report(message, user, chat, "wrong_topic")
             return
-        if not self.store.is_monitored(user.id):
+        if not self.settings.accept_all_topic_users and not self.store.is_monitored(user.id):
             self.log_rejected_report(message, user, chat, "unmonitored_user")
             return
         parsed = parse_report(message.text)

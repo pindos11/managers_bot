@@ -55,6 +55,17 @@ def test_only_the_configured_topic_and_monitored_user_are_processed(tmp_path: Pa
     assert bot.service.summary(utc_now()).participants[0].user_id == 10
 
 
+def test_all_topic_users_mode_accepts_unmonitored_users(tmp_path: Path) -> None:
+    settings = Settings(
+        "token", 1, -100, 5, ZoneInfo("Europe/Kyiv"), time(6), 60,
+        tmp_path / "bot.sqlite", accept_all_topic_users=True,
+    )
+    bot = TelegramProgressBot(settings, Store(settings.database_path))
+    context = SimpleNamespace(bot=FakeBot(), args=[])
+    asyncio.run(bot.report_message(update(-100, 99, FakeMessage("1/1", 1, 5)), context))
+    assert bot.service.summary(utc_now()).participants[0].user_id == 99
+
+
 def test_rejected_reports_are_logged_with_reason_and_text(tmp_path: Path, caplog) -> None:
     bot = make_bot(tmp_path)
     context = SimpleNamespace(bot=FakeBot(), args=[])
