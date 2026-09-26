@@ -30,6 +30,6 @@
   "alert_conflicting_totals": "Конфликтующие записи о всего целевых действий: {details}. Наименьшее значение использовано: {location}."
   ,"alert_card_decreased": "Количество по картам уменьшилось для {user}: {previous} -> {current}."
   ,"alert_cash_decreased": "Количество по кэш уменьшилось для {user}: {previous} -> {current}."
-  ,"summary_card": "карты {card}"
+  ,"summary_card": "карты {card} ({percent:.1f}%){warning}"
   ,"summary_cash": "кэш {cash}"
 }

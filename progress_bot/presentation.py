@@ -4,7 +4,11 @@ from .domain import Summary, format_user_label
 from .translations import Translator
 
 
-def format_summary(summary: Summary, translator: Translator | None = None) -> str:
+def format_summary(
+    summary: Summary,
+    translator: Translator | None = None,
+    card_percent_bad_threshold: float | None = None,
+) -> str:
     translator = translator or Translator()
     stamp = summary.generated_at.strftime("%Y-%m-%d %H:%M UTC")
     lines = [
@@ -32,7 +36,14 @@ def format_summary(summary: Summary, translator: Translator | None = None) -> st
         for report in summary.participants:
             payment_values = []
             if report.card_units is not None:
-                payment_values.append(translator.text("summary_card", card=report.card_units))
+                percent = 0 if report.personal_units == 0 else report.card_units / report.personal_units * 100
+                is_bad = card_percent_bad_threshold is not None and percent < card_percent_bad_threshold
+                payment_values.append(translator.text(
+                    "summary_card",
+                    card=report.card_units,
+                    percent=percent,
+                    warning=" ⚠️" if is_bad else "",
+                ))
             if report.cash_units is not None:
                 payment_values.append(translator.text("summary_cash", cash=report.cash_units))
             payments = f", {', '.join(payment_values)}" if payment_values else ""

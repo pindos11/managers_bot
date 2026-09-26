@@ -111,6 +111,16 @@ def test_adduser_name_is_shown_in_users_and_summary(tmp_path: Path) -> None:
     assert "Alice Smith (10)" in format_summary(summary)
 
 
+def test_summary_shows_card_share_and_marks_a_bad_share(tmp_path: Path) -> None:
+    bot = make_bot(tmp_path)
+    now = datetime(2026, 9, 5, 8, tzinfo=timezone.utc)
+    bot.service.submit(10, -100, 2, parse_report("10/20/4/6"), now)
+
+    text = format_summary(bot.service.summary(now), card_percent_bad_threshold=50)
+
+    assert "card 4 (40.0%) ⚠️" in text
+
+
 def test_summary_slot_is_anchored_to_daily_reset(tmp_path: Path) -> None:
     bot = make_bot(tmp_path)
     before = datetime(2026, 9, 5, 6, 59, 50, tzinfo=ZoneInfo("Europe/Kyiv"))

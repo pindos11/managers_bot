@@ -173,6 +173,14 @@ Employee reports are `personal/location` (`n/m`) or `personal/location/card/cash
 
 By default, only users added with `/adduser` can report. Set `accept_all_topic_users = true` in the `[reporting]` section of `config.toml` to accept valid reports from every user who writes in the configured chat topic. Chat and topic filtering still apply.
 
+Summaries show each reported card total as a percentage of that user's personal actions (`card / personal`). To mark a low result with `⚠️`, set a percentage in `[reporting]`; it is marked only when strictly lower than the configured value:
+
+```toml
+card_percent_bad_threshold = 50
+```
+
+Omit this setting to show the card percentage without warnings.
+
 Rejected text reports are written to the service log with a reason, chat/topic/message/user IDs, and the message text (long text is truncated). On the server, view them with:
 
 ```bash

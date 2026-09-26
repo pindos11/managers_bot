@@ -104,7 +104,14 @@ class TelegramProgressBot:
             else:
                 await update.effective_message.reply_text(self.translator.text("usage_target"))
         elif name == "/status":
-            await self.send_owner(context.bot, format_summary(self.service.summary(now), self.translator))
+            await self.send_owner(context.bot, self.format_summary(now))
+
+    def format_summary(self, now: datetime) -> str:
+        return format_summary(
+            self.service.summary(now),
+            self.translator,
+            self.settings.card_percent_bad_threshold,
+        )
 
     async def report_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         message = update.effective_message
@@ -160,7 +167,7 @@ class TelegramProgressBot:
         slot = self.store.oldest_pending_summary_slot() or self.summary_slot(now)
         if not self.store.claim_summary_slot(slot, now):
             return
-        await self.send_owner(context.bot, format_summary(self.service.summary(now), self.translator))
+        await self.send_owner(context.bot, self.format_summary(now))
         self.store.mark_summary_sent(slot, utc_now())
 
     async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:

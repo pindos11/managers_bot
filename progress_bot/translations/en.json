@@ -30,6 +30,6 @@
   "alert_conflicting_totals": "Conflicting current location totals: {details}. Using latest report value {location}."
   ,"alert_card_decreased": "Card total decreased for {user}: {previous} -> {current}."
   ,"alert_cash_decreased": "Cash total decreased for {user}: {previous} -> {current}."
-  ,"summary_card": "card {card}"
+  ,"summary_card": "card {card} ({percent:.1f}%){warning}"
   ,"summary_cash": "cash {cash}"
 }

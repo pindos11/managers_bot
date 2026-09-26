@@ -19,6 +19,19 @@ def test_all_topic_users_mode_can_be_enabled(tmp_path: Path) -> None:
     assert load_settings(config, {"TELEGRAM_BOT_TOKEN": "secret"}).accept_all_topic_users
 
 
+def test_card_percent_bad_threshold_can_be_configured(tmp_path: Path) -> None:
+    config = tmp_path / "config.toml"
+    config.write_text("""[telegram]\nowner_user_id=1\ngroup_chat_id=-2\ntopic_id=3\n[reporting]\ntimezone='Europe/Kyiv'\ndaily_reset_time='06:00'\ncard_percent_bad_threshold=50\n[storage]\ndatabase_path='bot.sqlite'\n""")
+    assert load_settings(config, {"TELEGRAM_BOT_TOKEN": "secret"}).card_percent_bad_threshold == 50
+
+
+def test_card_percent_bad_threshold_must_be_a_percentage(tmp_path: Path) -> None:
+    config = tmp_path / "config.toml"
+    config.write_text("""[telegram]\nowner_user_id=1\ngroup_chat_id=-2\ntopic_id=3\n[reporting]\ntimezone='Europe/Kyiv'\ndaily_reset_time='06:00'\ncard_percent_bad_threshold=101\n[storage]\ndatabase_path='bot.sqlite'\n""")
+    with pytest.raises(ValueError, match="card_percent_bad_threshold"):
+        load_settings(config, {"TELEGRAM_BOT_TOKEN": "secret"})
+
+
 def test_token_is_required(tmp_path: Path) -> None:
     config = tmp_path / "config.toml"
     config.write_text("[telegram]\n")

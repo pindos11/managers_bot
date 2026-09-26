@@ -20,6 +20,7 @@ class Settings:
     database_path: Path
     language: str = "en"
     accept_all_topic_users: bool = False
+    card_percent_bad_threshold: float | None = None
 
 
 def load_settings(path: str | Path, environ: dict[str, str] | None = None) -> Settings:
@@ -42,6 +43,13 @@ def load_settings(path: str | Path, environ: dict[str, str] | None = None) -> Se
         accept_all_topic_users = reporting.get("accept_all_topic_users", False)
         if not isinstance(accept_all_topic_users, bool):
             raise ValueError("accept_all_topic_users must be true or false")
+        card_percent_bad_threshold = reporting.get("card_percent_bad_threshold")
+        if card_percent_bad_threshold is not None:
+            if isinstance(card_percent_bad_threshold, bool):
+                raise ValueError("card_percent_bad_threshold must be a number between 0 and 100")
+            card_percent_bad_threshold = float(card_percent_bad_threshold)
+            if not 0 <= card_percent_bad_threshold <= 100:
+                raise ValueError("card_percent_bad_threshold must be between 0 and 100")
         return Settings(
             token=token,
             owner_user_id=int(telegram["owner_user_id"]),
@@ -53,6 +61,7 @@ def load_settings(path: str | Path, environ: dict[str, str] | None = None) -> Se
             database_path=Path(storage["database_path"]),
             language=str(reporting.get("language", "en")).lower(),
             accept_all_topic_users=accept_all_topic_users,
+            card_percent_bad_threshold=card_percent_bad_threshold,
         )
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError(f"Invalid configuration in {path}: {error}") from error
