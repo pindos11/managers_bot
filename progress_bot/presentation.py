@@ -67,7 +67,11 @@ def format_rich_summary(
                 report.received_at.strftime("%H:%M UTC"),
             )
             cells.append([
-                {"text": value, "align": "left" if index == 0 else "right"}
+                {
+                    "text": {"type": "bold", "text": value}
+                    if index == 2 and summary.location_units == report.location_units else value,
+                    "align": "left" if index == 0 else "right",
+                }
                 for index, value in enumerate(values)
             ])
         blocks.append({

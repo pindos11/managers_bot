@@ -153,6 +153,22 @@ def test_summary_shows_card_share_and_marks_a_bad_share(tmp_path: Path) -> None:
     assert "4 (40.0%) ⚠" in card
 
 
+def test_rich_summary_bolds_each_highest_location_value(tmp_path: Path) -> None:
+    bot = make_bot(tmp_path)
+    now = datetime(2026, 9, 5, 8, tzinfo=timezone.utc)
+    bot.store.add_user(10, now, "Alice")
+    bot.store.add_user(11, now, "Bob")
+    bot.service.submit(10, -100, 1, parse_report("1/20"), now)
+    bot.service.submit(11, -100, 2, parse_report("2/15"), now)
+
+    table = format_rich_summary(bot.service.summary(now))["blocks"][-1]
+    alice_location = table["cells"][1][2]["text"]
+    bob_location = table["cells"][2][2]["text"]
+
+    assert alice_location == {"type": "bold", "text": "20"}
+    assert bob_location == "15"
+
+
 def test_status_sends_summary_as_html_table(tmp_path: Path) -> None:
     bot = make_bot(tmp_path)
     now = utc_now()
