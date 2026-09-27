@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timedelta
 
 from telegram import Update
+from telegram.constants import ParseMode
 from telegram.error import NetworkError, RetryAfter, TelegramError
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
@@ -31,10 +32,10 @@ class TelegramProgressBot:
         user = update.effective_user
         return bool(chat and user and chat.type == "private" and user.id == self.settings.owner_user_id)
 
-    async def send_owner(self, bot, message: str) -> None:
+    async def send_owner(self, bot, message: str, *, parse_mode: str | None = None) -> None:
         for attempt in range(3):
             try:
-                await bot.send_message(chat_id=self.settings.owner_user_id, text=message)
+                await bot.send_message(chat_id=self.settings.owner_user_id, text=message, parse_mode=parse_mode)
                 return
             except RetryAfter as error:
                 if attempt == 2:
@@ -61,6 +62,13 @@ class TelegramProgressBot:
             user.id,
             text,
         )
+
+    @staticmethod
+    def sender_display_name(user) -> str | None:
+        """Use the current Telegram profile name, omitting absent name parts."""
+        parts = (getattr(user, "first_name", None), getattr(user, "last_name", None))
+        name = " ".join(part.strip() for part in parts if isinstance(part, str) and part.strip())
+        return name or None
 
     async def command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not self.is_owner_pm(update):
@@ -104,7 +112,7 @@ class TelegramProgressBot:
             else:
                 await update.effective_message.reply_text(self.translator.text("usage_target"))
         elif name == "/status":
-            await self.send_owner(context.bot, self.format_summary(now))
+            await self.send_owner(context.bot, self.format_summary(now), parse_mode=ParseMode.HTML)
 
     def format_summary(self, now: datetime) -> str:
         return format_summary(
@@ -133,6 +141,10 @@ class TelegramProgressBot:
             self.log_rejected_report(message, user, chat, "invalid_report_format")
             return
         now = utc_now()
+        # Keep the summary label in sync with the sender's Telegram profile.
+        # This runs only after the monitoring check, so restricted mode cannot
+        # be bypassed by sending a report.
+        self.store.add_user(user.id, now, self.sender_display_name(user))
         result, alerts = self.service.submit(user.id, chat.id, message.message_id, parsed, now)
         day = self.service.business_day(now)
         for index, alert in enumerate(alerts):
@@ -167,7 +179,7 @@ class TelegramProgressBot:
         slot = self.store.oldest_pending_summary_slot() or self.summary_slot(now)
         if not self.store.claim_summary_slot(slot, now):
             return
-        await self.send_owner(context.bot, self.format_summary(now))
+        await self.send_owner(context.bot, self.format_summary(now), parse_mode=ParseMode.HTML)
         self.store.mark_summary_sent(slot, utc_now())
 
     async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:

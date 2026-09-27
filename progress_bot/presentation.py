@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from html import escape
+
 from .domain import Summary, format_user_label
 from .translations import Translator
 
@@ -33,26 +35,47 @@ def format_summary(
         lines.append(translator.text("summary_conflict", conflicts=conflicts))
     if summary.participants:
         lines.append(translator.text("summary_users"))
+        headers = (
+            translator.text("summary_table_person"),
+            translator.text("summary_table_personal"),
+            translator.text("summary_table_location"),
+            translator.text("summary_table_card"),
+            translator.text("summary_table_cash"),
+            translator.text("summary_table_reports"),
+            translator.text("summary_table_last"),
+        )
+        rows = []
         for report in summary.participants:
-            payment_values = []
+            card = "—"
             if report.card_units is not None:
                 percent = 0 if report.personal_units == 0 else report.card_units / report.personal_units * 100
                 is_bad = card_percent_bad_threshold is not None and percent < card_percent_bad_threshold
-                payment_values.append(translator.text(
-                    "summary_card",
-                    card=report.card_units,
-                    percent=percent,
-                    warning=" ⚠️" if is_bad else "",
-                ))
-            if report.cash_units is not None:
-                payment_values.append(translator.text("summary_cash", cash=report.cash_units))
-            payments = f", {', '.join(payment_values)}" if payment_values else ""
-            lines.append(translator.text(
-                "summary_user",
-                label=format_user_label(report.user_id, report.display_name),
-                personal=report.personal_units,
-                location=report.location_units,
-                count=report.report_count,
-                when=report.received_at.strftime("%H:%M UTC"),
-            ) + payments)
-    return "\n".join(lines)
+                card = f"{report.card_units} ({percent:.0f}%){' ⚠' if is_bad else ''}"
+            rows.append((
+                format_user_label(report.user_id, report.display_name),
+                str(report.personal_units),
+                str(report.location_units),
+                card,
+                "—" if report.cash_units is None else str(report.cash_units),
+                str(report.report_count),
+                report.received_at.strftime("%H:%M"),
+            ))
+        lines.append(_format_table(headers, rows))
+
+    # Summary text is sent with Telegram HTML parsing enabled so that the
+    # table can be a preformatted block. Escape every ordinary text fragment.
+    return "\n".join(line if line.startswith("<pre>") else escape(line) for line in lines)
+
+
+def _format_table(headers: tuple[str, ...], rows: list[tuple[str, ...]]) -> str:
+    """Return a Telegram HTML preformatted table with aligned columns."""
+    widths = [len(header) for header in headers]
+    for row in rows:
+        widths = [max(width, len(value)) for width, value in zip(widths, row)]
+
+    def render(row: tuple[str, ...]) -> str:
+        return "  ".join(value.ljust(width) for value, width in zip(row, widths)).rstrip()
+
+    divider = "  ".join("-" * width for width in widths)
+    table = "\n".join((render(headers), divider, *(render(row) for row in rows)))
+    return f"<pre>{escape(table)}</pre>"

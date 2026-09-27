@@ -23,10 +23,10 @@ class FakeMessage:
 
 class FakeBot:
     def __init__(self) -> None:
-        self.sent: list[tuple[int, str]] = []
+        self.sent: list[tuple[int, str, str | None]] = []
 
-    async def send_message(self, chat_id: int, text: str) -> None:
-        self.sent.append((chat_id, text))
+    async def send_message(self, chat_id: int, text: str, parse_mode: str | None = None) -> None:
+        self.sent.append((chat_id, text, parse_mode))
 
 
 def make_bot(tmp_path: Path) -> TelegramProgressBot:
@@ -34,10 +34,17 @@ def make_bot(tmp_path: Path) -> TelegramProgressBot:
     return TelegramProgressBot(settings, Store(settings.database_path))
 
 
-def update(chat_id: int, user_id: int, message: FakeMessage, chat_type: str = "supergroup"):
+def update(
+    chat_id: int,
+    user_id: int,
+    message: FakeMessage,
+    chat_type: str = "supergroup",
+    first_name: str | None = None,
+    last_name: str | None = None,
+):
     return SimpleNamespace(
         effective_chat=SimpleNamespace(id=chat_id, type=chat_type),
-        effective_user=SimpleNamespace(id=user_id),
+        effective_user=SimpleNamespace(id=user_id, first_name=first_name, last_name=last_name),
         effective_message=message,
     )
 
@@ -62,8 +69,25 @@ def test_all_topic_users_mode_accepts_unmonitored_users(tmp_path: Path) -> None:
     )
     bot = TelegramProgressBot(settings, Store(settings.database_path))
     context = SimpleNamespace(bot=FakeBot(), args=[])
-    asyncio.run(bot.report_message(update(-100, 99, FakeMessage("1/1", 1, 5)), context))
-    assert bot.service.summary(utc_now()).participants[0].user_id == 99
+    asyncio.run(bot.report_message(
+        update(-100, 99, FakeMessage("1/1", 1, 5), first_name="Alice", last_name="Smith"), context
+    ))
+    participant = bot.service.summary(utc_now()).participants[0]
+    assert participant.user_id == 99
+    assert participant.display_name == "Alice Smith"
+
+
+def test_each_valid_report_refreshes_the_sender_display_name(tmp_path: Path) -> None:
+    bot = make_bot(tmp_path)
+    now = datetime(2026, 9, 5, 8, tzinfo=timezone.utc)
+    bot.store.add_user(10, now, "Old Name")
+    context = SimpleNamespace(bot=FakeBot(), args=[])
+
+    asyncio.run(bot.report_message(
+        update(-100, 10, FakeMessage("1/1", 1, 5), first_name="New", last_name="Name"), context
+    ))
+
+    assert bot.store.users() == [(10, "New Name")]
 
 
 def test_rejected_reports_are_logged_with_reason_and_text(tmp_path: Path, caplog) -> None:
@@ -118,7 +142,25 @@ def test_summary_shows_card_share_and_marks_a_bad_share(tmp_path: Path) -> None:
 
     text = format_summary(bot.service.summary(now), card_percent_bad_threshold=50)
 
-    assert "card 4 (40.0%) ⚠️" in text
+    assert "<pre>" in text
+    assert "Person" in text
+    assert "4 (40%) ⚠" in text
+
+
+def test_status_sends_summary_as_html_table(tmp_path: Path) -> None:
+    bot = make_bot(tmp_path)
+    now = utc_now()
+    bot.store.add_user(10, now, "Alice")
+    bot.service.submit(10, -100, 2, parse_report("10/20/4/6"), now)
+    fake_bot = FakeBot()
+    context = SimpleNamespace(bot=fake_bot, args=[])
+
+    asyncio.run(bot.command(update(1, 1, FakeMessage("/status", 3), "private"), context))
+
+    assert len(fake_bot.sent) == 1
+    _, text, parse_mode = fake_bot.sent[0]
+    assert parse_mode == "HTML"
+    assert "<pre>" in text and "Alice (10)" in text
 
 
 def test_summary_slot_is_anchored_to_daily_reset(tmp_path: Path) -> None:

@@ -163,7 +163,7 @@ Back up the SQLite database regularly with SQLite's online backup command or a f
 
 ## Owner commands
 
-- `/adduser <telegram_id> [name]` / `/removeuser <telegram_id>` -- for example, `/adduser 123456789 Alice Smith`; summaries then show `Alice Smith (123456789)`.
+- `/adduser <telegram_id> [name]` / `/removeuser <telegram_id>` -- for example, `/adduser 123456789 Alice Smith`; summaries then show `Alice Smith (123456789)`. Every valid report refreshes the label from the sender's current Telegram first and last name, so a supplied name is only a temporary fallback.
 - `/users`
 - `/target <integer>` or `/target`
 - `/status`
@@ -171,7 +171,7 @@ Back up the SQLite database regularly with SQLite's online backup command or a f
 
 Employee reports are `personal/location` (`n/m`) or `personal/location/card/cash` (`n/m/c/k`). Personal, card, and cash are per-user cumulative totals; location is the location-wide control total. Card and cash are optional, but must be supplied together in the four-value format. An old-format report received after a new-format report leaves that user's card and cash totals unchanged. During a business day neither reported per-user value may decrease. When an employee's personal total rises, their location total must rise by at least the same amount since that employee's previous report; otherwise the owner is alerted. The day-wide high-water mark for location is stored in SQLite, so a restart cannot allow a lower value. Corrections use `*`: a new-format correction may replace an old-format report, but an old-format correction of a new-format report is silently ignored so it cannot discard card/cash values. Invalid text, edits, deleted messages, unmonitored users, and messages outside the configured topic are ignored.
 
-By default, only users added with `/adduser` can report. Set `accept_all_topic_users = true` in the `[reporting]` section of `config.toml` to accept valid reports from every user who writes in the configured chat topic. Chat and topic filtering still apply.
+By default, only users added with `/adduser` can report. Set `accept_all_topic_users = true` in the `[reporting]` section of `config.toml` to accept valid reports from every user who writes in the configured chat topic. Chat and topic filtering still apply. In this mode, `/removeuser` removes the saved label until that person sends their next valid report, which saves their current Telegram name again.
 
 Summaries show each reported card total as a percentage of that user's personal actions (`card / personal`). To mark a low result with `⚠️`, set a percentage in `[reporting]`; it is marked only when strictly lower than the configured value:
 
