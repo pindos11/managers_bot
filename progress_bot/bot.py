@@ -5,13 +5,12 @@ import logging
 from datetime import datetime, timedelta
 
 from telegram import Update
-from telegram.constants import ParseMode
 from telegram.error import NetworkError, RetryAfter, TelegramError
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from .config import Settings
 from .domain import business_day_start, format_user_label, parse_report, utc_now
-from .presentation import format_summary
+from .presentation import format_rich_summary, format_summary
 from .service import ProgressService
 from .storage import Store
 from .translations import Translator
@@ -36,6 +35,31 @@ class TelegramProgressBot:
         for attempt in range(3):
             try:
                 await bot.send_message(chat_id=self.settings.owner_user_id, text=message, parse_mode=parse_mode)
+                return
+            except RetryAfter as error:
+                if attempt == 2:
+                    raise
+                retry_after = error.retry_after
+                seconds = retry_after.total_seconds() if hasattr(retry_after, "total_seconds") else float(retry_after)
+                await asyncio.sleep(seconds + 1)
+            except NetworkError:
+                if attempt == 2:
+                    raise
+                await asyncio.sleep(2**attempt)
+
+    async def send_owner_rich(self, bot, rich_message: dict[str, object]) -> None:
+        """Send a rich message through PTB's shared async request stack.
+
+        python-telegram-bot does not yet expose Bot API rich-message types.
+        This small compatibility boundary preserves its configured HTTP client,
+        timeouts, and error handling.
+        """
+        for attempt in range(3):
+            try:
+                await bot._post(  # noqa: SLF001 - Bot API compatibility shim
+                    "sendRichMessage",
+                    data={"chat_id": self.settings.owner_user_id, "rich_message": rich_message},
+                )
                 return
             except RetryAfter as error:
                 if attempt == 2:
@@ -112,10 +136,17 @@ class TelegramProgressBot:
             else:
                 await update.effective_message.reply_text(self.translator.text("usage_target"))
         elif name == "/status":
-            await self.send_owner(context.bot, self.format_summary(now), parse_mode=ParseMode.HTML)
+            await self.send_owner_rich(context.bot, self.format_rich_summary(now))
 
     def format_summary(self, now: datetime) -> str:
         return format_summary(
+            self.service.summary(now),
+            self.translator,
+            self.settings.card_percent_bad_threshold,
+        )
+
+    def format_rich_summary(self, now: datetime) -> dict[str, object]:
+        return format_rich_summary(
             self.service.summary(now),
             self.translator,
             self.settings.card_percent_bad_threshold,
@@ -179,7 +210,7 @@ class TelegramProgressBot:
         slot = self.store.oldest_pending_summary_slot() or self.summary_slot(now)
         if not self.store.claim_summary_slot(slot, now):
             return
-        await self.send_owner(context.bot, self.format_summary(now), parse_mode=ParseMode.HTML)
+        await self.send_owner_rich(context.bot, self.format_rich_summary(now))
         self.store.mark_summary_sent(slot, utc_now())
 
     async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:

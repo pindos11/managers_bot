@@ -6,6 +6,80 @@ from .domain import Summary, format_user_label
 from .translations import Translator
 
 
+def format_rich_summary(
+    summary: Summary,
+    translator: Translator | None = None,
+    card_percent_bad_threshold: float | None = None,
+) -> dict[str, object]:
+    """Build a Bot API 10.1 rich-message payload with a native summary table."""
+    translator = translator or Translator()
+    stamp = summary.generated_at.strftime("%Y-%m-%d %H:%M UTC")
+    blocks: list[dict[str, object]] = [
+        {"type": "heading", "text": translator.text("summary_title", day=summary.business_day), "size": 3},
+        {"type": "paragraph", "text": translator.text("summary_generated", stamp=stamp)},
+        {"type": "paragraph", "text": translator.text("summary_participants", count=len(summary.participants))},
+    ]
+    if summary.location_units is None:
+        blocks.append({"type": "paragraph", "text": translator.text("summary_location_empty")})
+    elif summary.target is None:
+        blocks.append({"type": "paragraph", "text": translator.text(
+            "summary_location_no_target", location=summary.location_units
+        )})
+    else:
+        percent = 0 if summary.target == 0 else summary.location_units / summary.target * 100
+        blocks.append({"type": "paragraph", "text": translator.text(
+            "summary_location_target", location=summary.location_units, target=summary.target, percent=percent
+        )})
+        blocks.append({"type": "paragraph", "text": translator.text(
+            "summary_pace", expected=summary.pace_expected, variance=summary.pace_variance
+        )})
+    if summary.conflicting_location_values:
+        names = {report.user_id: report.display_name for report in summary.participants}
+        conflicts = ", ".join(
+            f"{format_user_label(user_id, names.get(user_id))}={value}"
+            for user_id, value in summary.conflicting_location_values.items()
+        )
+        blocks.append({"type": "paragraph", "text": translator.text("summary_conflict", conflicts=conflicts)})
+    if summary.participants:
+        headers = (
+            translator.text("summary_table_person"),
+            translator.text("summary_table_personal"),
+            translator.text("summary_table_location"),
+            translator.text("summary_table_card"),
+            translator.text("summary_table_cash"),
+            translator.text("summary_table_reports"),
+            translator.text("summary_table_last"),
+        )
+        cells: list[list[dict[str, object]]] = [[{"text": header, "is_header": True} for header in headers]]
+        for report in summary.participants:
+            card = "—"
+            if report.card_units is not None:
+                percent = 0 if report.personal_units == 0 else report.card_units / report.personal_units * 100
+                is_bad = card_percent_bad_threshold is not None and percent < card_percent_bad_threshold
+                card = f"{report.card_units} ({percent:.1f}%){' ⚠️' if is_bad else ''}"
+            values = (
+                format_user_label(report.user_id, report.display_name),
+                str(report.personal_units),
+                str(report.location_units),
+                card,
+                "—" if report.cash_units is None else str(report.cash_units),
+                str(report.report_count),
+                report.received_at.strftime("%H:%M UTC"),
+            )
+            cells.append([
+                {"text": value, "align": "left" if index == 0 else "right"}
+                for index, value in enumerate(values)
+            ])
+        blocks.append({
+            "type": "table",
+            "cells": cells,
+            "is_bordered": True,
+            "is_striped": True,
+            "is_compact": True,
+        })
+    return {"blocks": blocks}
+
+
 def format_summary(
     summary: Summary,
     translator: Translator | None = None,

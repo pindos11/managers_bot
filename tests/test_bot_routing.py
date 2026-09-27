@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from progress_bot.bot import TelegramProgressBot
 from progress_bot.config import Settings
 from progress_bot.domain import parse_report, utc_now
-from progress_bot.presentation import format_summary
+from progress_bot.presentation import format_rich_summary, format_summary
 from progress_bot.storage import Store
 
 
@@ -24,9 +24,13 @@ class FakeMessage:
 class FakeBot:
     def __init__(self) -> None:
         self.sent: list[tuple[int, str, str | None]] = []
+        self.posts: list[tuple[str, dict]] = []
 
     async def send_message(self, chat_id: int, text: str, parse_mode: str | None = None) -> None:
         self.sent.append((chat_id, text, parse_mode))
+
+    async def _post(self, endpoint: str, data: dict) -> None:
+        self.posts.append((endpoint, data))
 
 
 def make_bot(tmp_path: Path) -> TelegramProgressBot:
@@ -140,11 +144,13 @@ def test_summary_shows_card_share_and_marks_a_bad_share(tmp_path: Path) -> None:
     now = datetime(2026, 9, 5, 8, tzinfo=timezone.utc)
     bot.service.submit(10, -100, 2, parse_report("10/20/4/6"), now)
 
-    text = format_summary(bot.service.summary(now), card_percent_bad_threshold=50)
+    rich_message = format_rich_summary(bot.service.summary(now), card_percent_bad_threshold=50)
+    table = rich_message["blocks"][-1]
+    card = table["cells"][1][3]["text"]
 
-    assert "<pre>" in text
-    assert "Person" in text
-    assert "4 (40%) ⚠" in text
+    assert table["type"] == "table"
+    assert table["cells"][0][0] == {"text": "Person", "is_header": True}
+    assert "4 (40.0%) ⚠" in card
 
 
 def test_status_sends_summary_as_html_table(tmp_path: Path) -> None:
@@ -157,10 +163,14 @@ def test_status_sends_summary_as_html_table(tmp_path: Path) -> None:
 
     asyncio.run(bot.command(update(1, 1, FakeMessage("/status", 3), "private"), context))
 
-    assert len(fake_bot.sent) == 1
-    _, text, parse_mode = fake_bot.sent[0]
-    assert parse_mode == "HTML"
-    assert "<pre>" in text and "Alice (10)" in text
+    assert fake_bot.sent == []
+    assert len(fake_bot.posts) == 1
+    endpoint, data = fake_bot.posts[0]
+    assert endpoint == "sendRichMessage"
+    table = data["rich_message"]["blocks"][-1]
+    assert table["type"] == "table"
+    assert table["is_bordered"] and table["is_striped"] and table["is_compact"]
+    assert table["cells"][1][0]["text"] == "Alice (10)"
 
 
 def test_summary_slot_is_anchored_to_daily_reset(tmp_path: Path) -> None:
